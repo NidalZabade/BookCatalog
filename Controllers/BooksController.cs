@@ -11,10 +11,12 @@ namespace BookCatalog.Controllers
     public class BooksController : ControllerBase
     {
         private readonly BookService _bookService;
+        private readonly ILogger<BooksController> _logger;
 
-        public BooksController(BookService bookService)
+        public BooksController(BookService bookService, ILogger<BooksController> logger)
         {
             _bookService = bookService;
+            _logger = logger;
         }
 
         [HttpGet]
@@ -32,6 +34,29 @@ namespace BookCatalog.Controllers
                     Price = b.Price
                 });
             return Ok(paged);
+        }
+
+        [HttpGet("search")]
+        public IActionResult Search([FromQuery] string query, [FromQuery] int page = 1, [FromQuery] int pageSize = 10)
+        {
+            if (string.IsNullOrWhiteSpace(query))
+                return BadRequest("Query parameter is required.");
+
+            var books = _bookService.GetAllBooks()
+                .Where(b => (b.Title != null && b.Title.Contains(query, StringComparison.OrdinalIgnoreCase))
+                         || (b.GetType().GetProperty("Description") != null && b.GetType().GetProperty("Description")?.GetValue(b)?.ToString()?.Contains(query, StringComparison.OrdinalIgnoreCase) == true))
+                .Skip((page - 1) * pageSize)
+                .Take(pageSize)
+                .Select(b => new BookDto
+                {
+                    Id = b.Id,
+                    Title = b.Title,
+                    Author = b.Author,
+                    Genre = b.Genre,
+                    PublishedYear = b.PublishedYear,
+                    Price = b.Price
+                });
+            return Ok(books);
         }
 
         [HttpGet("{id}")]
@@ -66,6 +91,7 @@ namespace BookCatalog.Controllers
                 Price = dto.Price
             };
             _bookService.AddBook(book);
+            _logger.LogInformation("Book added: {Title} by {Author}", book.Title, book.Author);
             var resultDto = new BookDto
             {
                 Id = book.Id,
@@ -94,6 +120,7 @@ namespace BookCatalog.Controllers
             };
             var success = _bookService.UpdateBook(id, updatedBook);
             if (!success) return NotFound();
+            _logger.LogInformation("Book updated (ID: {Id}): {Title} by {Author}", id, updatedBook.Title, updatedBook.Author);
             return NoContent();
         }
 
@@ -102,6 +129,7 @@ namespace BookCatalog.Controllers
         {
             var success = _bookService.DeleteBook(id);
             if (!success) return NotFound();
+            _logger.LogInformation("Book deleted (ID: {Id})", id);
             return NoContent();
         }
     }
